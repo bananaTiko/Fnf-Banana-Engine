@@ -1,6 +1,7 @@
 package;
 
 #if desktop
+import Discord.DiscordClient;
 import sys.thread.Thread;
 #end
 import flixel.FlxG;
@@ -8,6 +9,8 @@ import flixel.FlxSprite;
 import flixel.FlxState;
 import flixel.input.keyboard.FlxKey;
 import flixel.addons.display.FlxGridOverlay;
+import flixel.addons.display.FlxBackdrop;
+import flixel.util.FlxGradient;
 import flixel.addons.transition.FlxTransitionSprite.GraphicTransTileDiamond;
 import flixel.addons.transition.FlxTransitionableState;
 import flixel.addons.transition.TransitionData;
@@ -34,6 +37,7 @@ import flixel.tweens.FlxEase;
 import flixel.tweens.FlxTween;
 import flixel.util.FlxColor;
 import flixel.util.FlxTimer;
+import lime.app.Application;
 import openfl.Assets;
 
 using StringTools;
@@ -62,10 +66,13 @@ class TitleState extends MusicBeatState
 	var credTextShit:Alphabet;
 	var textGroup:FlxGroup;
 	var ngSpr:FlxSprite;
+
+	var gradientBar:FlxSprite = new FlxSprite(0, 0).makeGraphic(FlxG.width, 1, 0xFF0066AA);
 	
 	var titleTextColors:Array<FlxColor> = [0xFF33FFFF, 0xFF3333CC];
 	var titleTextAlphas:Array<Float> = [1, .64];
 
+	var Timer:Float = 0;
 	var curWacky:Array<String> = [];
 
 	var wackyImage:FlxSprite;
@@ -77,6 +84,11 @@ class TitleState extends MusicBeatState
 	var allowedKeys:String = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 	var easterEggKeysBuffer:String = '';
 	#end
+
+	var maxwellCode:Array<String> = [];
+	var maxwellCorrectCode:Array<String> = [
+		'UP', 'UP', 'DOWN', 'DOWN', 'LEFT', 'RIGHT', 'LEFT', 'RIGHT', 'B', 'A'
+	];
 
 	var mustUpdate:Bool = false;
 
@@ -127,7 +139,8 @@ class TitleState extends MusicBeatState
 		swagShader = new ColorSwap();
 		super.create();
 
-		FlxG.save.bind('funkin', CoolUtil.getSavePath());
+
+		FlxG.save.bind('funkin', 'ninjamuffin99');
 
 		ClientPrefs.loadPrefs();
 
@@ -206,6 +219,16 @@ class TitleState extends MusicBeatState
 			FlxTransitionableState.skipNextTransOut = true;
 			MusicBeatState.switchState(new FlashingState());
 		} else {
+			#if desktop
+			if (!DiscordClient.isInitialized)
+			{
+				DiscordClient.initialize();
+				Application.current.onExit.add (function (exitCode) {
+					DiscordClient.shutdown();
+				});
+			}
+			#end
+
 			if (initialized)
 				startIntro();
 			else
@@ -272,13 +295,14 @@ class TitleState extends MusicBeatState
 		add(bg);
 
 		logoBl = new FlxSprite(titleJSON.titlex, titleJSON.titley);
-		logoBl.frames = Paths.getSparrowAtlas('logoBumpin');
+		logoBl.frames = Paths.getSparrowAtlas('carLogoBumpin');
 
 		logoBl.antialiasing = ClientPrefs.globalAntialiasing;
+		logoBl.scale.set(0.5, 0.5);
 		logoBl.animation.addByPrefix('bump', 'logo bumpin', 24, false);
 		logoBl.animation.play('bump');
 		logoBl.updateHitbox();
-		// logoBl.screenCenter();
+		logoBl.screenCenter();
 		// logoBl.color = FlxColor.BLACK;
 
 		swagShader = new ColorSwap();
@@ -318,6 +342,7 @@ class TitleState extends MusicBeatState
 		}
 		gfDance.antialiasing = ClientPrefs.globalAntialiasing;
 
+		gfDance.visible = false;
 		add(gfDance);
 		gfDance.shader = swagShader.shader;
 		add(logoBl);
@@ -380,6 +405,13 @@ class TitleState extends MusicBeatState
 		blackScreen = new FlxSprite().makeGraphic(FlxG.width, FlxG.height, FlxColor.BLACK);
 		credGroup.add(blackScreen);
 
+		gradientBar = FlxGradient.createGradientFlxSprite(Math.round(FlxG.width), 512, [0x00ff0000, 0x55041368, 0xAA1856C9], 1, 90, true);
+		gradientBar.y = FlxG.height - gradientBar.height;
+		gradientBar.scale.y = 0;
+		gradientBar.updateHitbox();
+		add(gradientBar);
+		FlxTween.tween(gradientBar, {'scale.y': 1.3}, 4, {ease: FlxEase.quadInOut});
+
 		credTextShit = new Alphabet(0, 0, "", true);
 		credTextShit.screenCenter();
 
@@ -432,6 +464,12 @@ class TitleState extends MusicBeatState
 			Conductor.songPosition = FlxG.sound.music.time;
 		// FlxG.watch.addQuick('amp', FlxG.sound.music.amplitude);
 
+		gradientBar.scale.y += Math.sin(Timer / 10) * 0.001 / (ClientPrefs.framerate / 60);
+		gradientBar.updateHitbox();
+		gradientBar.y = FlxG.height - gradientBar.height;
+		// gradientBar = FlxGradient.createGradientFlxSprite(Math.round(FlxG.width), Math.round(gradientBar.height), [0x00ff0000, 0xaaAE59E4, 0xff19ECFF], 1, 90, true);
+
+
 		var pressedEnter:Bool = FlxG.keys.justPressed.ENTER || controls.ACCEPT;
 
 		#if mobile
@@ -480,27 +518,34 @@ class TitleState extends MusicBeatState
 			
 			if(pressedEnter)
 			{
-				titleText.color = FlxColor.WHITE;
-				titleText.alpha = 1;
-				
-				if(titleText != null) titleText.animation.play('press');
-
-				FlxG.camera.flash(ClientPrefs.flashing ? FlxColor.WHITE : 0x4CFFFFFF, 1);
-				FlxG.sound.play(Paths.sound('confirmMenu'), 0.7);
-
-				transitioning = true;
-				// FlxG.sound.music.stop();
-
-				new FlxTimer().start(1, function(tmr:FlxTimer)
+				if (maxwellCode.length == maxwellCorrectCode.length)
 				{
-					if (mustUpdate) {
-						MusicBeatState.switchState(new OutdatedState());
-					} else {
-						MusicBeatState.switchState(new MainMenuState());
-					}
-					closedState = true;
-				});
-				// FlxG.sound.play(Paths.music('titleShoot'), 0.7);
+					MusicBeatState.switchState(new MaxwellState());
+				}
+				else {
+					titleText.color = FlxColor.WHITE;
+					titleText.alpha = 1;
+				
+					if(titleText != null) titleText.animation.play('press');
+
+					FlxG.camera.flash(ClientPrefs.flashing ? FlxColor.WHITE : 0x4CFFFFFF, 1);
+					FlxG.sound.play(Paths.sound('confirmMenu'), 0.7);
+
+					transitioning = true;
+					FlxTween.tween(FlxG.camera, {y: FlxG.height}, 1.6, {ease: FlxEase.expoIn, startDelay: 0.4});
+					// FlxG.sound.music.stop();
+
+					new FlxTimer().start(1.7, function(tmr:FlxTimer)
+					{
+						if (mustUpdate) {
+							MusicBeatState.switchState(new OutdatedState());
+						} else {
+							MusicBeatState.switchState(new MainMenuState());
+						}
+						closedState = true;
+					});
+					// FlxG.sound.play(Paths.music('titleShoot'), 0.7);
+				}
 			}
 			#if TITLE_SCREEN_EASTER_EGG
 			else if (FlxG.keys.firstJustPressed() != FlxKey.NONE)
@@ -552,6 +597,17 @@ class TitleState extends MusicBeatState
 				}
 			}
 			#end
+			else if (FlxG.keys.firstJustPressed() != FlxKey.NONE)
+			{
+				var keyPressed:FlxKey = FlxG.keys.firstJustPressed();
+				var keyName:String = Std.string(keyPressed);
+				if (keyName == maxwellCorrectCode[maxwellCode.length]) {
+					maxwellCode.insert(maxwellCode.length + 1, keyName);
+				}
+				else {
+					maxwellCode == [];
+				}
+			}
 		}
 
 		if (initialized && pressedEnter && !skippedIntro)
@@ -566,6 +622,8 @@ class TitleState extends MusicBeatState
 		}
 
 		super.update(elapsed);
+
+		
 	}
 
 	function createCoolText(textArray:Array<String>, ?offset:Float = 0)
@@ -629,9 +687,9 @@ class TitleState extends MusicBeatState
 					FlxG.sound.music.fadeIn(4, 0, 0.7);
 				case 2:
 					#if PSYCH_WATERMARKS
-					createCoolText(['Psych Engine by'], 15);
+					createCoolText(['Banana/Psych Engine by'], 15);
 					#else
-					createCoolText(['ninjamuffin99', 'phantomArcade', 'kawaisprite', 'evilsk8er']);
+					createCoolText(['The Honkin Team']);
 					#end
 				// credTextShit.visible = true;
 				case 4:
@@ -639,6 +697,7 @@ class TitleState extends MusicBeatState
 					addMoreText('Shadow Mario', 15);
 					addMoreText('RiverOaken', 15);
 					addMoreText('shubs', 15);
+					addMoreText('banana_tiko2', 15);
 					#else
 					addMoreText('present');
 					#end
@@ -651,12 +710,12 @@ class TitleState extends MusicBeatState
 				// credTextShit.screenCenter();
 				case 6:
 					#if PSYCH_WATERMARKS
-					createCoolText(['Not associated', 'with'], -40);
+					createCoolText(['Psych Fork', 'By'], -40);
 					#else
 					createCoolText(['In association', 'with'], -40);
 					#end
 				case 8:
-					addMoreText('newgrounds', -40);
+					addMoreText('Newgrounds', -40);
 					ngSpr.visible = true;
 				// credTextShit.text += '\nNewgrounds';
 				case 9:
@@ -678,13 +737,13 @@ class TitleState extends MusicBeatState
 				// credTextShit.text = "Friday";
 				// credTextShit.screenCenter();
 				case 14:
-					addMoreText('Friday');
+					addMoreText('FNF');
 				// credTextShit.visible = true;
 				case 15:
-					addMoreText('Night');
+					addMoreText('Banana');
 				// credTextShit.text += '\nNight';
 				case 16:
-					addMoreText('Funkin'); // credTextShit.text += '\nFunkin';
+					addMoreText('Engine'); // credTextShit.text += '\nFunkin';
 
 				case 17:
 					skipIntro();
@@ -775,4 +834,3 @@ class TitleState extends MusicBeatState
 			skippedIntro = true;
 		}
 	}
-}
